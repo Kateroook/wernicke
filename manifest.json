@@ -1,0 +1,30 @@
+{
+  "name": "Wernicke Extension",
+  "description": "Fun translation",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_icon": "assets/wernicke_logo_big.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [  "activeTab",
+    "storage"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*"],
+  "trial_tokens" :  ["An8CRj67CqnLjwDJf6nB91Bx+IqGycGprv3Y0asiLgtJyxCR0jyvlXvA7GWuNWSA3npgVguCG+YGyAO7YtvtYAkAAAB7eyJvcmlnaW4iOiJjaHJvbWUtZXh0ZW5zaW9uOi8vam5oa29kZ2tjZ25rY2hsbHBpam5la21icGNnb2NkYmQiLCJmZWF0dXJlIjoiQUlQcm9tcHRBUElNdWx0aW1vZGFsSW5wdXQiLCJleHBpcnkiOjE3NzQzMTA0MDB9"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.bundle.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/wernicke_logo_big.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
