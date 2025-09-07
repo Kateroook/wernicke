@@ -1,14 +1,68 @@
-export async function fetchWordData(word) {
-    chrome.runtime.sendMessage(
-        { type: "DEFINE", word },
-        (response) => {
-            if (response.error) {
-                console.error("Error:", response.error);
-            } else {
-                console.log("Definition:", response.data);
-                // тут можна оновити UI з дефініцією
+export async function fetchWordData(word, sourceLang = "EN", surroundingText = null) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            { type: "DEFINE", word, sourceLang, surroundingText },
+            (response) => {
+                if (!response) {
+                    reject(new Error("No response from background"));
+                    return;
+                }
+                if (response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response.data);
+                }
             }
-        }
-    );
+        );
+    });
 }
 
+
+export async function fetchFriendlyExplanation({ text, sourceLang, targetLang, surroundingText }) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            {
+                type: "EXPLAIN",
+                text,
+                sourceLang,
+                targetLang,
+                surroundingText,
+            },
+            (response) => {
+                if (!response) {
+                    reject(new Error("No response from background"));
+                    return;
+                }
+                if (response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response.data);
+                }
+            }
+        );
+    });
+}
+
+export async function fetchSynonyms({ text, sourceLang, surroundingText }) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            {
+                type: "SYNONYMS",
+                text,
+                sourceLang,
+                surroundingText,
+            },
+            (response) => {
+                if (!response) {
+                    reject(new Error("No response from background"));
+                    return;
+                }
+                if (response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response.data);
+                }
+            }
+        );
+    });
+}

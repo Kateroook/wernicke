@@ -1,5 +1,6 @@
 import { showTranslateMenu } from './translateMenu.js';
 import { showDefinitionMenu } from './definitionMenu.js';
+import { showSynonymsMenu } from './synonymsMenu.js';
 
 export function showMenu(x, y, state) {
     removeMenu(state);
@@ -54,7 +55,10 @@ function showHorizontalMenu(state) {
         showTranslateMenu(state);
     };
 
-    document.getElementById("synonymsBtn").onclick = () => alert("Show synonyms...");
+    document.getElementById("synonymsBtn").onclick = (e) => {
+        e.stopPropagation();
+        showSynonymsMenu(state);
+    };
 
     document.getElementById("meaningBtn").onclick = (e) => {
         e.stopPropagation();

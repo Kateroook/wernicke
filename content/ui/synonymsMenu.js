@@ -1,13 +1,13 @@
 import {showTranslateMenu} from "./translateMenu";
-import {showSynonymsMenu} from "./synonymsMenu";
+import {showDefinitionMenu} from "./definitionMenu";
 import {detectLang} from "../services/translate";
-import {fetchWordData} from "../services/dictionary";
+import {fetchSynonyms} from "../services/dictionary";
 import {WordData, WordManager} from "../services/wordData";
 import {getSpeechSupport} from "../services/langUtils";
 
 const wordManager = new WordManager();
 
-export function showDefinitionMenu(state) {
+export function showSynonymsMenu(state) {
     const lastSelectedText = state.lastSelectedTextRef.value;
     const menuBox = state.menuBoxRef.value;
     const surroundingText = state.lastSurroundingTextRef?.value;
@@ -16,27 +16,27 @@ export function showDefinitionMenu(state) {
     
     // Check if we have a selected text
     if (!lastSelectedText || lastSelectedText.trim() === '') {
-        console.error("No text selected for definition menu");
+        console.error("No text selected for synonyms menu");
         return;
     }
 
     // Create WordData object with surrounding text
     const wordData = new WordData(lastSelectedText, "EN", surroundingText);
 
-    console.log("Word data", wordData);
+    console.log("Synonyms Word data", wordData);
     // Show loading state
-    renderDefinitionMenu(wordData, state, true);
+    renderSynonymsMenu(wordData, state, true);
     
     // Load word data asynchronously
-    loadWordData(wordData).then(() => {
-        renderDefinitionMenu(wordData, state, false);
+    loadWordDataForSynonyms(wordData).then(() => {
+        renderSynonymsMenu(wordData, state, false);
     }).catch(error => {
         console.error("Failed to load word data:", error);
-        renderDefinitionMenu(wordData, state, false, error);
+        renderSynonymsMenu(wordData, state, false, error);
     });
 }
 
-async function loadWordData(wordData) {
+async function loadWordDataForSynonyms(wordData) {
     try {
         // Check if we already have this word data cached
         const existingWords = wordManager.getAllWords();
@@ -58,10 +58,10 @@ async function loadWordData(wordData) {
         
         if (existingWord) {
             // Check if cached data actually has content
-            const hasDefinition = existingWord.definition?.definitions?.length > 0;
+            const hasSynonyms = existingWord.synonyms?.length > 0;
             
-            if (hasDefinition) {
-                console.log("Using cached word data for definition:", wordData.text);
+            if (hasSynonyms) {
+                console.log("Using cached word data for synonyms:", wordData.text);
                 // Copy cached data to current wordData, but keep the new ID, timestamp, and surrounding text
                 const newId = wordData.id;
                 const newTimestamp = wordData.timestamp;
@@ -72,21 +72,21 @@ async function loadWordData(wordData) {
                 wordData.context.surroundingText = newSurroundingText;
                 return;
             } else {
-                console.log("Cached definition data is empty, loading fresh data for:", wordData.text);
+                console.log("Cached synonyms data is empty, loading fresh data for:", wordData.text);
             }
         }
         
-        console.log("Loading new word data for definition:", wordData.text);
+        console.log("Loading new word data for synonyms:", wordData.text);
         
         // Detect language
         const detectedLang = await detectLang(wordData.text);
         wordData.sourceLanguage = detectedLang;
         
-        // Load pronunciation and basic data
+        // Load pronunciation
         await loadPronunciation(wordData);
         
-        // Load definitions
-        await loadDefinitions(wordData);
+        // Load synonyms
+        await loadSynonyms(wordData);
         
         // Save to word manager
         await wordManager.saveWord(wordData);
@@ -98,87 +98,27 @@ async function loadWordData(wordData) {
 }
 
 async function loadPronunciation(wordData) {
-    if (wordData.sourceLanguage === "EN") {
-        try {
-            const wordApiData = await fetchWordData(wordData.text);
-            if (wordApiData) {
-                const phonetic = wordApiData.phonetics?.find(p => p.text)?.text || "";
-                const audioUrl = wordApiData.phonetics?.find(p => p.audio)?.audio || null;
-                wordData.updatePronunciation(phonetic, audioUrl);
-            }
-        } catch (error) {
-            console.error("Failed to load pronunciation from API:", error);
-        }
-    }
-    
     // Check for speech synthesis support
-    if (!wordData.pronunciation.audioUrl) {
-        const hasSpeechSynthesis = await getSpeechSupport(wordData.sourceLanguage);
-        wordData.updatePronunciation(
-            wordData.pronunciation.phonetic, 
-            null, 
-            hasSpeechSynthesis
-        );
-    }
+    const hasSpeechSynthesis = await getSpeechSupport(wordData.sourceLanguage);
+    wordData.updatePronunciation(null, null, hasSpeechSynthesis);
 }
 
-async function loadDefinitions(wordData) {
+async function loadSynonyms(wordData) {
     try {
-        const response = await fetchWordData(wordData.text, wordData.sourceLanguage, wordData.context.surroundingText);
-        const definitionText = response?.definition || "";
-        
-        // Parse the structured response from backend
-        const parsedDefinitions = parseDefinitionResponse(definitionText);
-        wordData.updateDefinition(parsedDefinitions);
+        const response = await fetchSynonyms({
+            text: wordData.text,
+            sourceLang: wordData.sourceLanguage,
+            surroundingText: wordData.context.surroundingText,
+        });
+        const synonyms = response?.synonyms || [];
+        wordData.updateSynonyms(synonyms);
     } catch (error) {
-        console.error("Failed to load definitions:", error);
-        wordData.updateDefinition([]);
+        console.error("Failed to load synonyms:", error);
+        wordData.updateSynonyms([]);
     }
 }
 
-function parseDefinitionResponse(definitionText) {
-    if (!definitionText) return [];
-    
-    const lines = definitionText.split('\n').filter(line => line.trim());
-    const definitions = [];
-    let currentDefinition = null;
-    let popularUses = "";
-    
-    for (const line of lines) {
-        const trimmedLine = line.trim();
-        
-        if (trimmedLine.startsWith('Definition:')) {
-            if (currentDefinition) {
-                definitions.push(currentDefinition);
-            }
-            currentDefinition = {
-                definition: trimmedLine.replace('Definition:', '').trim(),
-                examples: []
-            };
-        } else if (trimmedLine.startsWith('Popular uses:')) {
-            popularUses = trimmedLine.replace('Popular uses:', '').trim();
-            if (currentDefinition && popularUses) {
-                currentDefinition.definition += `\n\nPopular uses: ${popularUses}`;
-            }
-        } else if (trimmedLine.startsWith('Example 1:') || trimmedLine.startsWith('Example 2:')) {
-            if (currentDefinition) {
-                const example = trimmedLine.replace(/^Example \d+:/, '').trim();
-                if (example) {
-                    currentDefinition.examples.push(example);
-                }
-            }
-        }
-    }
-    
-    if (currentDefinition) {
-        definitions.push(currentDefinition);
-    }
-    
-    return definitions;
-}
-
-
-function renderDefinitionMenu(wordData, state, isLoading = false, error = null) {
+function renderSynonymsMenu(wordData, state, isLoading = false, error = null) {
     const menuBox = state.menuBoxRef.value;
     if (!menuBox) return;
 
@@ -213,7 +153,7 @@ function renderDefinitionMenu(wordData, state, isLoading = false, error = null) 
                     font-size: 18px;
                     line-height: 32px;
                     cursor: default;
-                ">Definition</button>          
+                ">Synonyms</button>
 
                 <button id="addCardBtn" style="
                     background: ${isAddedToWordList ? '#28a745' : 'white'};
@@ -241,7 +181,7 @@ function renderDefinitionMenu(wordData, state, isLoading = false, error = null) 
                     margin-left: auto;
                 ">Translate</button>
 
-                <button id="showSynonymsBtn" style="
+                <button id="definitionBtn" style="
                     background: white;
                     color: #0057d8;
                     border: none;
@@ -251,15 +191,14 @@ function renderDefinitionMenu(wordData, state, isLoading = false, error = null) 
                     font-size: 12px;
                     line-height: 32px;
                     cursor: pointer;
-                    margin-left: auto;
-                ">Synonyms</button>
+                ">Definition</button>
             </div>
 
             <!-- Word display -->
             <div style="margin-bottom: 10px;">
                 <div id="sourceTextDisplay" style="font-size: 20px; font-weight: bold;">
                     ${wordData.text}
-                    ${(wordData.pronunciation.audioUrl || wordData.pronunciation.hasSpeechSynthesis) 
+                    ${wordData.pronunciation.hasSpeechSynthesis 
                         ? '<span id="playPronunciation" style="font-size: 14px; cursor: pointer;">🔊</span>' 
                         : ''}
                 </div>
@@ -268,13 +207,13 @@ function renderDefinitionMenu(wordData, state, isLoading = false, error = null) 
                 </div>
             </div>
             
-            <!-- Definitions section -->
-            <div id="definitionsSection" style="margin-top: 10px; color: white;">
-                <div style="font-weight: bold; margin-bottom: 5px;">Definitions:</div>
-                <div id="definitionList" style="font-size: 14px;">
-                    ${isLoading ? '<div style="color: #ccc;">Loading...</div>' : 
-                      error ? '<div style="color: #ff6b6b;">Error loading definitions</div>' :
-                      renderDefinitions(wordData.definition.definitions)}
+            <!-- Synonyms section -->
+            <div id="synonymsSection" style="margin-top: 10px; color: white;">
+                <div style="font-weight: bold; margin-bottom: 10px;">Synonyms:</div>
+                <div id="synonymsList" style="font-size: 14px; line-height: 1.6;">
+                    ${isLoading ? '<div style="color: #ccc;">Loading synonyms...</div>' : 
+                      error ? '<div style="color: #ff6b6b;">Error loading synonyms</div>' :
+                      renderSynonyms(wordData.synonyms)}
                 </div>
             </div>
             
@@ -288,31 +227,31 @@ function renderDefinitionMenu(wordData, state, isLoading = false, error = null) 
     `;
 
     // Setup event listeners
-    setupDefinitionMenuEvents(wordData, state);
+    setupSynonymsMenuEvents(wordData, state);
 }
 
-function renderDefinitions(definitions) {
-    if (definitions.length === 0) {
-        return '<div style="color: #ccc;">No definitions found.</div>';
+function renderSynonyms(synonyms) {
+    if (!synonyms || synonyms.length === 0) {
+        return '<div style="color: #ccc;">No synonyms found.</div>';
     }
     
-    return definitions.map((entry, index) => {
-        const examplesHtml = entry.examples && entry.examples.length > 0
-            ? `<ul style="margin: 5px 0 10px 20px; padding: 0; color: #ddd;">
-                ${entry.examples.map(ex => `<li style="margin-bottom: 3px;">${ex}</li>`).join("")}
-               </ul>`
-            : "";
-        return `
-            <div style="margin-bottom: 10px;">
-                <div><b>${index + 1}.</b> ${entry.definition}</div>
-                ${examplesHtml}
-            </div>
-        `;
-    }).join("");
+    return synonyms.map(synonym => 
+        `<span style="
+            background: rgba(255,255,255,0.2);
+            padding: 4px 8px;
+            margin: 3px;
+            border-radius: 6px;
+            display: inline-block;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        " onmouseover="this.style.backgroundColor='rgba(255,255,255,0.3)'" 
+           onmouseout="this.style.backgroundColor='rgba(255,255,255,0.2)'"
+           onclick="selectSynonym('${synonym}')">${synonym}</span>`
+    ).join("");
 }
 
-
-function setupDefinitionMenuEvents(wordData, state) {
+function setupSynonymsMenuEvents(wordData, state) {
     // Translate button
     const translateBtn = document.getElementById("translateBtn");
     if (translateBtn) {
@@ -321,6 +260,17 @@ function setupDefinitionMenuEvents(wordData, state) {
             // Update the selected text to current word before showing translate
             state.lastSelectedTextRef.value = wordData.text;
             showTranslateMenu(state);
+        };
+    }
+
+    // Definition button
+    const definitionBtn = document.getElementById("definitionBtn");
+    if (definitionBtn) {
+        definitionBtn.onclick = (e) => {
+            e.stopPropagation();
+            // Update the selected text to current word before showing definition
+            state.lastSelectedTextRef.value = wordData.text;
+            showDefinitionMenu(state);
         };
     }
 
@@ -335,7 +285,7 @@ function setupDefinitionMenuEvents(wordData, state) {
                 wordData.addToWordList();
             }
             await wordManager.saveWord(wordData);
-            renderDefinitionMenu(wordData, state, false);
+            renderSynonymsMenu(wordData, state, false);
         };
     }
 
@@ -343,9 +293,7 @@ function setupDefinitionMenuEvents(wordData, state) {
     const playPronunciation = document.getElementById("playPronunciation");
     if (playPronunciation) {
         playPronunciation.onclick = () => {
-            if (wordData.pronunciation.audioUrl) {
-                new Audio(wordData.pronunciation.audioUrl).play();
-            } else if (wordData.pronunciation.hasSpeechSynthesis) {
+            if (wordData.pronunciation.hasSpeechSynthesis) {
                 const utterance = new SpeechSynthesisUtterance(wordData.text);
                 utterance.lang = wordData.sourceLanguage.toLowerCase();
                 speechSynthesis.speak(utterance);
@@ -353,14 +301,17 @@ function setupDefinitionMenuEvents(wordData, state) {
         };
     }
 
-    // Synonyms button
-    const showSynonymsBtn = document.getElementById("showSynonymsBtn");
-    if (showSynonymsBtn) {
-        showSynonymsBtn.onclick = (e) => {
-            e.stopPropagation();
-            // Update the selected text to current word before showing synonyms
-            state.lastSelectedTextRef.value = wordData.text;
-            showSynonymsMenu(state);
-        };
+    // Make selectSynonym function available globally for onclick handlers
+    window.selectSynonym = (synonym) => {
+        // Update the selected text and show translate menu for the synonym
+        state.lastSelectedTextRef.value = synonym;
+        showTranslateMenu(state);
+    };
+}
+
+// Clean up global function when menu is closed
+export function cleanupSynonymsMenu() {
+    if (window.selectSynonym) {
+        delete window.selectSynonym;
     }
 }
